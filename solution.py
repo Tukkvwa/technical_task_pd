@@ -3,36 +3,52 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.ndimage import gaussian_filter
+from collections import defaultdict
 
 
 df = pd.read_csv('match_data.csv')
 df.rename(columns={'Pitch_x': 'x', 'Pitch_y' : 'y',
                    'participation_id' : 'id' , 'Time (s)': 
                    'time', 'Speed (m/s)': 'speed'}, inplace=True)
-pitch_dimensions = {'x': (-52.5, 52.5), 'y': (-34, 34)}
 
 df = df[(df['x'] > -52.5) &
         (df['x'] < 52.5) &
         (df['y'] > -34) &
-        (df['y'] < 34)]
+        (df['y'] < 34) &
+        (df['speed'] > 0)]
 
-df.sort_values(by=['id', 'time'], inplace=True)
-df = df.round({"x": 1, "y": 1})
+def time_spent(target_id, proximity_threshold=5):
 
-plt.figure(figsize = (10,8))
-df['x'] = pd.cut(df['x'], bins=60, labels=False)
-df['y'] = pd.cut(df['y'], bins=40, labels=False)
+    time_groups = df.groupby('time')
+    time_with_others = defaultdict(int)
 
-position_counts = df.groupby(['x', 'y']).size().sort_values(ascending=False).reset_index(name='counts')
-#print(position_counts.iloc[1:])
+    for time, group in time_groups:
+        # Get target's coordinates at this time
+        target_data = group[group['id'] == target_id]
+        if target_data.empty:
+            continue  # target_id not present at this time
+        
+        x_target = target_data['x'].values[0]
+        y_target = target_data['y'].values[0]
+        
+        # Compute Euclidean distance from target to all others at this time
+        group['distance'] = np.sqrt(
+            (group['x'] - x_target) ** 2 + 
+            (group['y'] - y_target) ** 2
+        )
+        
+        # Filter IDs within proximity threshold (excluding itself)
+        nearby_ids = group[(group['distance'] <= proximity_threshold) & 
+                           (group['id'] != target_id)]['id'].tolist()
+        
+        # Increment time spent with each nearby ID (assuming 0.1 time unit per row)
+        for other_id in nearby_ids:
+            time_with_others[other_id] += 0.1
 
-pos_smooth = gaussian_filter(position_counts.iloc[1:].pivot(index='x', columns='y', values='counts'), sigma=1)
-#pos_smooth = gaussian_filter(position_counts.pivot(index='x', columns='y', values='counts'), sigma=1)
-sns.heatmap(pos_smooth, cmap='coolwarm', cbar=False)
+    # Find the ID that spent the most time with target_id
+    print(time_with_others)
 
-#print(position_counts)
-plt.show()
-
+time_spent('ball')
 """
 lboard1 = df[df['id'] != 'ball'][['id', 'x', 'y']] 
 total_distances = (
